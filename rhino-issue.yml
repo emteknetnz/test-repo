@@ -1,0 +1,71 @@
+name: Rhino issue
+
+on:
+  # At 17:00 UTC every Tuesday
+  schedule:
+    - cron: '0 17 * * 2'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  rhino-issue:
+    name: Rhino issue
+    # Only run cron on the silverstripe account
+    if: (github.event_name == 'schedule' && github.repository_owner == 'silverstripe') || (github.event_name != 'schedule')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      ISSUE_TITLE: "Broken builds, merge-ups, and licenses"
+    steps:
+      - name: Check for existing open issue
+        id: check_for_existing_open_issue
+        run: |
+          # get the date 21 days ago to limit issues returned to allow a broken builds issue to
+          # be unresolved for up to 3 weeks
+          SINCE=$(date -d "-21 days" '+%Y-%m-%d')
+          # https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues
+          RESP_CODE=$(curl -w %{http_code} -s -L -o __response.json \
+          -X GET \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ github.token }}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          https://api.github.com/repos/$GITHUB_REPOSITORY/issues?state=open\&since=$SINCE
+          )
+          # use jq to find github issues with the title "${{ env.ISSUE_TITLE }}"
+          ISSUE_NUMBER=$(jq -r '.[] | select(.title == "$ISSUE_TITLE") | .id'  __response.json)
+          if [[ "$ISSUE_NUMBER" == "" ]]; then
+            echo "Did not find an open issue with the title '$ISSUE_TITLE'"
+            echo "has_issue=false" >> $GITHUB_OUTPUT
+          else
+            echo "Found an open issue with the title '$ISSUE_TITLE'"
+            echo "has_issue=true" >> $GITHUB_OUTPUT
+          fi
+      - name: Rhino issue
+        uses: silverstripe/gha-issue@v1
+        if: steps.check_for_existing_open_issue.outputs.has_issue == 'false'
+        with:
+          title: ${{ env.ISSUE_TITLE }}
+          close_existing: true
+          description: |
+            This is an automatically created issue used to remind the Silverstripe CMS Squad to look at broken builds, merge-ups and licenses every Tuesday.\n
+            \n
+            It was created by the `.github/workflows/rhino-issue.yml` workflow in the [silverstripe/.github](https://github.com/silverstripe/.github/) repository.\n
+            \n
+            ### Triage instructions\n
+            1. Put on the following label:\n
+              - `type/other`\n
+            2. Move this issue to the "Ready" column on our internal zenhub board\n
+            \n
+            ### Broken builds:\n
+            - https://rhino.silverstripe.org/?t=builds\n
+            \n
+            ### Merge-ups:\n
+            - https://rhino.silverstripe.org/?t=merge-ups\n
+            \n
+            ### Licenses:\n
+            - The cron only runs on the default branch\n
+            - Manually run the workflow on other supported branches, including minor and patch\n
+            - https://github.com/silverstripe/recipe-kitchen-sink/actions/workflows/licenses.yml\n
+            \n
