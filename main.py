@@ -1,0 +1,5 @@
+print("Hello, World!")
+print("")
+print("  /\\_/\\")
+print(" ( o.o )")
+print("  > ^ <")
